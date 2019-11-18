@@ -1,0 +1,242 @@
+#include "mh523.h"
+#include "uart.h"
+#include "stdio.h"
+#include "jrreader.h"
+
+#include "gpio.h"//Beep led控制
+
+#include "iso14443_4.h"
+#include "iso14443a.h"
+#include "iso14443b.h"//射频卡相关头文件
+#include "ContactlessAPI.h"//非接触式卡APDU接口头文件
+
+#include "7816.h"
+#include "mhscpu_sci.h"//
+#include "iso7816_3.h"//接触式卡头文件
+#include "emv_errno.h"
+#include "emv_hard.h"
+
+#include "Packet.h"
+#include "define.h" //上位机通讯协议相关
+
+#include "psam.h" //PSAM 头文件 
+#include "psamAPI.h"//PSAM APDU接口头文件
+
+#include "crc.h"//软件CRC算法
+
+
+extern Packet receivePacket;//上位机通信接收结构体
+extern Packet sendPacket;//上位机通信发送结构体
+extern MH523TypeDef MH523;//读卡芯片通信相关结构体
+extern Errorflag ProtocolFlag;//协议接收标志位
+
+unsigned char PCardSN[4]={0};//4位卡号
+
+void UploadCardSn()
+{
+	 unsigned char checkNum = 0;//CRC计算结果
+	 unsigned char status;
+	 unsigned char s[200];
+	 unsigned char Ctype;
+	 status = pro_GetCardID(PCardSN);
+   if(status==0)
+		{
+//			CardClassDiscutFlg=0;     // 普通卡
+			
+		//	printf("挥卡上报--->\n");
+			
+			s[0]=STX;	s[1]=0x01;
+			memcpy(s+2,"\x0E\x01\x0b\x01",4);
+			s[6]=0x33;
+			s[7]= 0x00;
+			s[8]= 0x06;
+			s[9]= RC_DATA;
+			
+			Ctype=CaptureCardType(); //返回卡类
+			if(Ctype==M1_CARD)           s[10]=0x01;    //M1卡  
+			else if(Ctype==CPUAPP)       s[10]=0x02;    //纯行业卡
+			else if(Ctype==UNION_PAY)    s[10]=0x03;    //纯银行卡
+			else if(Ctype==UNIONPAYCPU)  s[10]=0x04;    //复合银行卡
+			else
+			{
+				s[10]=0x0F;
+			}
+			memcpy(s+11,PCardSN,4);
+			checkNum = crc16(s+1,14);
+			s[15]= checkNum;
+			s[16]= 0x03;
+			UART0_SendBuf(s,17);
+		}
+		else
+		{
+      //printf("no card \r\n");
+		}
+}
+
+
+void SerJRReaderHandle(Packet *recPacket)
+{
+
+    unsigned char checkNum = 0;//CRC计算结果
+    unsigned char Status=0;
+    unsigned short ren=0;
+    unsigned char  UARTRevbuf[300]={0};
+    unsigned char s[200]={0};
+//    checkNum = crc16(recPacket->packet_buf,recPacket->packrt_buf_len);
+//    if(checkNum != recPacket->crc16)
+//    {
+//        printf("crc error! rec:%02X now:%02X\r\n",recPacket->crc16,checkNum);
+//        return;
+//    }
+    switch(recPacket->command)
+    {
+    case 0x08://ECHO
+			      s[0]=STX;
+            s[1]=0x01;
+            memcpy(s+2,"银通",4);
+            s[6]=0x08;
+            s[7]= recPacket->length>>8;
+            s[8]= recPacket->length & 0xFF;
+            memcpy(s+10,recPacket->data,recPacket->length);
+            checkNum = crc16(s+1,9+recPacket->length);//CRC校验
+            s[10+recPacket->length]= checkNum;
+            s[11+recPacket->length]= 0x03;
+            UART0_SendBuf(s,12+recPacket->length); 
+        ;
+        break;
+    case 0x30:
+        ;
+        break;
+    case 0x34:
+        if(recPacket->data[0] == 0x04)//非接卡
+        {
+            Status = pro_APDU(&recPacket->data[1],recPacket->length-1,UARTRevbuf,&ren);
+            if(Status==0)s[9]= RC_DATA;
+            else s[9]=RC_FAILURE;
+            s[0]=STX;
+            s[1]=0x01;
+            memcpy(s+2,"银通",4);
+            s[6]=0x34;
+            s[7]= (ren+1)>>8;
+            s[8]= ren+1;
+            memcpy(s+10,UARTRevbuf,ren);
+            checkNum = crc16(s+1,9+ren);//CRC校验
+            s[10+ren]= checkNum;
+            s[11+ren]= 0x03;
+            //Uart1Send(s,12+ren);
+            UART0_SendBuf(s,12+ren);
+        }
+        else
+        {
+            if(recPacket->data[0]==1)//卡槽1
+            {
+                selPsam=1;
+            }
+            else if(recPacket->data[0]==2)//卡槽2
+            {
+                selPsam=2;
+               
+            }
+            else if(recPacket->data[0]==3)//卡槽3
+            {
+                selPsam=3;
+            }
+            else
+            {
+                printf("error psam num!\r\n");
+            }
+
+            Status=pro_APDU_PSAM(&recPacket->data[1],recPacket->length-1,UARTRevbuf,&ren);
+
+            if(Status==0)s[9]= RC_DATA;
+            else s[9]=RC_FAILURE;
+
+            s[0]=STX;
+            s[1]=0x01;
+            memcpy(s+2,"\x0E\x01\x0b\x01",4);
+            s[6]=0x34;
+            s[7]= (ren+1)>>8;
+            s[8]= ren+1;
+            memcpy(s+10,UARTRevbuf,ren);
+            checkNum = crc16(s+1,9+ren);
+            s[10+ren]= checkNum;
+            s[11+ren]= 0x03;
+            UART0_SendBuf(s,12+ren);
+
+        }
+				break;
+    case 0x35://接触式卡 上电
+        if(recPacket->data[0]==1)//卡槽1
+        {
+            selPsam=1; 
+        }
+        else if(recPacket->data[0]==2)//卡槽2
+        {
+            selPsam=2;
+        }
+        else if(recPacket->data[0]==3)//卡槽3
+        {
+            selPsam=3;
+        }
+        else
+        {
+            printf("no psam num!\r\n");
+        }
+        if(psam_reset(selPsam))
+        {
+            s[9]=RC_DATA;
+        }
+        else s[9]=RC_FAILURE;
+
+        s[0]=STX;
+        s[1]=0x01;
+        memcpy(s+2,"\x0E\x01\x0b\x01",4);
+        s[6]=0x35;
+        s[7]= (psam_atr_len+1)>>8;
+        s[8]= psam_atr_len+1;
+
+        memcpy(s+10,psam_atr_tab,psam_atr_len);
+
+        checkNum = crc16(s+1,9+psam_atr_len); //′í?ó??
+
+        s[10+psam_atr_len]=checkNum;
+        s[11+psam_atr_len]= 0x03;
+        UART0_SendBuf(s,12+psam_atr_len);
+        break;
+    case 0x36: // 开启/关闭读卡器 （开射频天线）
+        if(recPacket->data[0]==0x01)
+        {
+            pcd_antenna_on();//开启天线
+					  beep();
+            // delay_ms(30);
+        }
+        else if(recPacket->data[0]==0x02)
+        {
+            pcd_antenna_off();//关闭天线
+					  beep();
+            // delay_ms(30);
+        }
+        else
+        {
+            printf("36--->\n");
+        }
+        s[0]=STX;
+        s[1]=0x01;
+        memcpy(s+2,"\x0E\x01\x0b\x01",4);
+        s[6]=0x36;
+        s[7]= 0x00;
+        s[8]= 0x01;
+        s[9]= RC_DATA; 
+        checkNum = crc16(s+1,9);
+        s[10]=checkNum;
+        s[11]= 0x03;
+        UART0_SendBuf(s,12);
+        break;
+
+    }
+}
+
+
+
+
+

@@ -1,0 +1,22 @@
+#ifndef _JRREADER_H
+#define _JRREADER_H
+
+#define STX  0x02
+
+#define RC_DATA       0     
+#define RC_FAILURE    0
+#define RC_INVALID_DATA  0 
+#define RC_DDA_AUTH_FAILURE  0
+#define RC_NO_CARD 0 
+#define RC_AUTH_NOT_PERFORMED  0
+#define RC_MORE_CARDS  0
+#define RC_Other_AP_CARDS 0
+#define RC_US_CARDS 0
+#define RC_SECOND_APPLICATION 0
+
+
+
+
+#endif
+
+
