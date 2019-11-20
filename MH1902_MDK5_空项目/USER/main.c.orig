@@ -1,0 +1,138 @@
+#include "stdio.h"
+#include "mhscpu.h"
+
+uint8_t src_Buf[128] = {0};
+uint8_t dst_Buf[128] = {0};
+#define DMA_BLOCK_SIZE	15
+
+void NVIC_Configuration(void)
+{
+  //NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_SetPriorityGrouping(NVIC_PriorityGroup_0);
+
+	/*NVIC_InitStructure.NVIC_IRQChannel = UART0_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+ 	NVIC_Init(&NVIC_InitStructure);*/
+}
+
+void UART_Configuration(void)
+{
+	UART_InitTypeDef UART_InitStructure;
+	UART_FIFOInitTypeDef UART_FIFOInitStruct;
+	/*GPIO_InitTypeDef GPIO_InitStructure;
+	
+	//PA0=========>UART0 RX
+	GPIO_InitStructure.GPIO_Pin=GPIO_Pin_0;
+	GPIO_InitStructure.GPIO_Mode=GPIO_Mode_IPU;
+	GPIO_InitStructure.GPIO_Remap=GPIO_Remap_0;
+	GPIO_Init(GPIOA,&GPIO_InitStructure);
+	
+	//PA1=========>UART0 TX
+	GPIO_InitStructure.GPIO_Pin=GPIO_Pin_1;
+	GPIO_InitStructure.GPIO_Mode=GPIO_Mode_Out_PP;
+	GPIO_InitStructure.GPIO_Remap=GPIO_Remap_0;
+	GPIO_Init(GPIOA,&GPIO_InitStructure);*/
+
+	UART_StructInit(&UART_InitStructure);
+	UART_FIFOStructInit(&UART_FIFOInitStruct);
+
+	UART_InitStructure.UART_BaudRate = 115200;
+	UART_InitStructure.UART_WordLength = UART_WordLength_8b;
+	UART_InitStructure.UART_StopBits = UART_StopBits_1;
+	UART_InitStructure.UART_Parity = UART_Parity_No;
+
+	UART_FIFOInitStruct.FIFO_Enable = ENABLE;
+	UART_FIFOInitStruct.FIFO_DMA_Mode = UART_FIFO_DMA_Mode_1;
+	UART_FIFOInitStruct.FIFO_RX_Trigger = UART_FIFO_RX_Trigger_1_2_Full;
+	UART_FIFOInitStruct.FIFO_TX_Trigger = UART_FIFO_RX_Trigger_1_2_Full;
+	UART_FIFOInitStruct.FIFO_TX_TriggerIntEnable = ENABLE;
+	
+	UART_Init(UART0, &UART_InitStructure);
+
+	UART_FIFOInit(UART0, &UART_FIFOInitStruct);
+// 	UART_ITConfig(UART0, UART_IT_RX_RECVD, ENABLE);
+}
+
+/*void DMA_Configuration(void)
+{
+	DMA_InitTypeDef DMA_InitStruct;
+
+	DMA_InitStruct.DMA_DIR = DMA_DIR_Peripheral_To_Memory;
+	DMA_InitStruct.DMA_Peripheral = (uint32_t)UART0;
+	DMA_InitStruct.DMA_PeripheralBaseAddr = (uint32_t)&(UART0->OFFSET_0.RBR);
+	DMA_InitStruct.DMA_PeripheralInc = DMA_Inc_Nochange;
+	DMA_InitStruct.DMA_PeripheralDataSize = DMA_DataSize_Byte;
+	DMA_InitStruct.DMA_PeripheralBurstSize = DMA_BurstSize_1;
+	DMA_InitStruct.DMA_MemoryBaseAddr = (uint32_t)&dst_Buf[0];
+	DMA_InitStruct.DMA_MemoryInc = DMA_Inc_Increment;
+	DMA_InitStruct.DMA_MemoryDataSize = DMA_DataSize_Byte;
+	DMA_InitStruct.DMA_MemoryBurstSize = DMA_BurstSize_1;
+	DMA_InitStruct.DMA_BlockSize = DMA_BLOCK_SIZE;
+	DMA_InitStruct.DMA_PeripheralHandShake = DMA_PeripheralHandShake_Hardware;
+	
+	DMA_Init(DMA_Channel_3, &DMA_InitStruct);
+}*/
+
+int main()
+{
+	
+	SYSCTRL_ClocksTypeDef SYSCTRL_ClocksInitStruct;
+	//SYSCTRL_AHBPeriphClockCmd(SYSCTRL_AHBPeriph_DMA, ENABLE);
+	//SYSCTRL_AHBPeriphResetCmd(SYSCTRL_AHBPeriph_DMA, ENABLE);
+  SYSCTRL_APBPeriphClockCmd(SYSCTRL_APBPeriph_UART0 | SYSCTRL_APBPeriph_GPIO,ENABLE);
+	SYSCTRL_APBPeriphResetCmd(SYSCTRL_APBPeriph_UART0  , ENABLE);
+	GPIO_PinRemapConfig(GPIOA, GPIO_Pin_0 | GPIO_Pin_1, GPIO_Remap_0);
+	UART_Configuration();
+	NVIC_Configuration();
+	//DMA_Configuration();
+	while(1)
+	{
+	  	
+		SYSCTRL_GetClocksFreq(&SYSCTRL_ClocksInitStruct);
+		printf("PLL=%d\r\n",SYSCTRL_ClocksInitStruct.PLL_Frequency);
+		printf("HCLK=%d\r\n",SYSCTRL_ClocksInitStruct.HCLK_Frequency);
+		printf("PCLK=%d\r\n",SYSCTRL_ClocksInitStruct.PCLK_Frequency);
+	}
+}	
+
+
+//Retarget Printf
+int SER_PutChar (int ch) {
+
+	while(!UART_IsTXEmpty(UART0));
+	UART_SendData(UART0, (uint8_t) ch);
+	return ch;
+}
+
+int fputc(int c, FILE *f)
+{
+	/* Place your implementation of fputc here */
+	/* e.g. write a character to the USART */
+	if (c == '\n')  {
+		SER_PutChar('\r');
+	}
+	return (SER_PutChar(c));
+}
+
+#ifdef  USE_FULL_ASSERT
+
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t* file, uint32_t line)
+{ 
+	/* User can add his own implementation to report the file name and line number,
+	 ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+
+	/* Infinite loop */
+	while (1)
+	{
+	}
+}
+#endif

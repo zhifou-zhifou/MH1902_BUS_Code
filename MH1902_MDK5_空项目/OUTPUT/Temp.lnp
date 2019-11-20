@@ -1,0 +1,18 @@
+--cpu Cortex-M3
+"..\output\main.o"
+"..\output\delay.o"
+"..\output\system_mhscpu.o"
+"..\output\startup_mhscpu.o"
+"..\output\mhscpu_dma.o"
+"..\output\mhscpu_exti.o"
+"..\output\mhscpu_gpio.o"
+"..\output\mhscpu_it.o"
+"..\output\mhscpu_sysctrl.o"
+"..\output\mhscpu_uart.o"
+"..\output\misc.o"
+"..\output\mhscpu_timer.o"
+"..\output\mhscpu_trng.o"
+--library_type=microlib --strict --scatter "..\OUTPUT\Temp.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Listings\Temp.map" -o ..\OUTPUT\Temp.axf
